@@ -45,6 +45,12 @@ export default defineConfigFactory((appInfo) => {
         },
       },
     },
+
+    security: {
+      csrf: {
+        ignore: /^\/session\//,
+      },
+    },
   } as PartialEggConfig;
 
   // add your special config in here
