@@ -8,6 +8,11 @@ import type { Cookie, Page } from 'playwright';
 export interface PlaywrightLoginResult {
   /** Playwright 原始 Cookie 数组，可直接用于后续请求回放 */
   cookies: Cookie[];
+  /**
+   * 核心 Session Cookie 值（可选，便于调用方快速取用）
+   * 各学校实现应尽量提取，常见字段：JSESSIONID、MOD_AUTH_CAS 等
+   */
+  sessionId?: string;
   /** 登录时间戳（ms） */
   loginAt: number;
 }
