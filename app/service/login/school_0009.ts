@@ -24,7 +24,7 @@ export const school0009Login: SchoolLoginService = {
     // 检查是否存在已被风控要求验证码的情况
     const captchaVisible = await page.$('input.captcha').catch(() => null);
     if (captchaVisible) {
-      throw new Error('账号密码错误或触发风控，需要输入验证码');
+      throw new Error('账号或密码错误（或触发风控，需要输入图形验证码）');
     }
 
     // 2. 填写账号密码

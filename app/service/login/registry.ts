@@ -9,6 +9,7 @@ import type { SchoolLoginService } from './types.ts';
 import { school0001Login } from './school_0001.ts';
 import { school0003Login } from './school_0003.ts';
 import { school0009Login } from './school_0009.ts';
+import { school0052Login } from './school_0052.ts';
 
 /**
  * 学校 ID → Playwright 登录 Service 映射表
@@ -22,6 +23,7 @@ const loginRegistry: Record<string, SchoolLoginService> = {
   '0001': school0001Login, // 中南大学
   '0003': school0003Login, // 湖南师范大学
   '0009': school0009Login, // 湖南农业大学
+  '0052': school0052Login, // 湖南财政经济学院
 
   // ── 后续按相同模式扩展 ────────────────────────────────────
   // '0002': school0002Login, // 湖南大学

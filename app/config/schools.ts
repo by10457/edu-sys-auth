@@ -212,7 +212,7 @@ export const schools: Record<string, SchoolConfig> = {
   },
   '0052': {
     name: '湖南财政经济学院',
-    playwright: { enabled: false },
+    playwright: { enabled: true, blockImages: true },
     cache: { ...defaultCache },
   },
   '0055': {
