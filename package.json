@@ -1,30 +1,23 @@
 {
   "name": "edu-sys-auth",
   "private": true,
-  "description": "Hello Egg.js",
-  "homepage": "https://github.com/YOUR_USERNAME/YOUR_REPO#readme",
-  "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/YOUR_REPO/issues"
-  },
+  "description": "教务系统 Playwright 自动化登录服务（高并发 Cookie 采集）",
   "license": "MIT",
-  "author": "Author Name <author.name@mail.com>",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/YOUR_REPO.git"
-  },
   "type": "module",
   "scripts": {
     "start": "eggctl start --daemon --title=egg-server-edu-sys-auth",
     "stop": "eggctl stop --title=egg-server-edu-sys-auth",
     "predev": "npm run clean",
     "dev": "egg-bin dev",
-    "worker:dev": "node --import @oxc-node/core/register app/worker/loginWorker.ts",
+    "dev:worker": "node --env-file=.env --import @oxc-node/core/register app/worker/loginWorker.ts",
+    "dev:all": "concurrently --names \"API,WORKER\" --prefix-colors \"cyan,yellow\" \"npm run dev\" \"npm run dev:worker\"",
+    "worker:dev": "node --env-file=.env --import @oxc-node/core/register app/worker/loginWorker.ts",
     "test:local": "cross-env NODE_OPTIONS=\"--import @oxc-node/core/register\" vitest run",
     "pretest": "npm run clean && npm run lint -- --fix",
     "test": "npm run test:local",
     "preci": "npm run clean && npm run lint",
     "ci": "npm run test:local -- --coverage",
-    "postci": "npm run prepublishOnly && npm start && sleep 10 && npm stop && npm run clean",
+    "postci": "npm run prepublishOnly && npm start && node -e \"setTimeout(()=>{},10000)\" && npm stop && npm run clean",
     "lint": "oxlint --type-aware",
     "typecheck": "tsgo --noEmit",
     "build": "tsc",
@@ -47,6 +40,7 @@
     "@oxc-node/core": "^0.0.35",
     "@types/node": "24",
     "@vitest/coverage-v8": "4",
+    "concurrently": "^9.2.1",
     "cross-env": "10",
     "oxlint": "1",
     "oxlint-tsgolint": "^0.21.0",
