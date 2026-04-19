@@ -21,6 +21,11 @@ export interface BrowserPoolConfig {
   maxContextUsage?: number;
   /** acquire 等待超时（毫秒），默认 30000 */
   acquireTimeoutMs?: number;
+  /**
+   * 是否以无头模式运行浏览器，默认 true（生产模式）
+   * 设为 false 可在开发时看到浏览器可视化自动化过程（注意：有头模式下建议减少并发数）
+   */
+  headless?: boolean;
 }
 
 interface ManagedContext {
@@ -34,6 +39,7 @@ export class BrowserPool {
   private readonly contextsPerBrowser: number;
   private readonly maxContextUsage: number;
   private readonly acquireTimeoutMs: number;
+  private readonly headless: boolean;
 
   /** 空闲 Context 队列 */
   private idlePool: ManagedContext[] = [];
@@ -52,6 +58,7 @@ export class BrowserPool {
     this.contextsPerBrowser = config.contextsPerBrowser ?? 5;
     this.maxContextUsage = config.maxContextUsage ?? 50;
     this.acquireTimeoutMs = config.acquireTimeoutMs ?? 30_000;
+    this.headless = config.headless ?? true;
   }
 
   /** 启动所有 Browser 并预热 Context（进程启动时调用一次） */
@@ -153,14 +160,20 @@ export class BrowserPool {
   private async launchBrowser(): Promise<void> {
     const id = this.nextBrowserId++;
     const browser = await chromium.launch({
-      headless: true,
-      args: [
-        // 反检测：禁用自动化标志
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-      ],
+      headless: this.headless,
+      // 有头模式（headless: false）时：可减少 args 以保证浏览器窗口正常渲染
+      args: this.headless
+        ? [
+            // 无头模式：完整的反检测 + 沙盒关闭参数
+            '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+          ]
+        : [
+            // 有头模式：仅保留反自动化检测，移除无头专用参数（避免影响 UI 渲染）
+            '--disable-blink-features=AutomationControlled',
+          ],
     });
 
     this.browsers.set(id, browser);
