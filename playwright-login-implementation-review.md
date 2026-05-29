@@ -47,19 +47,19 @@
 
 ## 3. 架构实现状态对照
 
-| 模块 | 文档目标 | 当前状态 | 结论 |
-|---|---|---|---|
-| API 接入层 | `POST /session`、`GET /session/:accountId`、`DELETE /session/:accountId`、`GET /health` | `POST /session`、`DELETE`、`GET /health` 已有雏形；`GET /session/:schoolId/:username` 只是提示文案，不会真正读 Redis | **部分实现** |
-| 异步任务查询 | 调用方轮询结果接口拿到登录结果 | 提供了 `GET /session/job/:jobId`，但只能看到任务状态，不返回 session 数据 | **部分实现** |
-| BullMQ 队列 | 固定 jobId 去重、重试、超时、完成记录保留 | 去重 / 重试 / 结果查询已做；任务级 `timeout` 未配置 | **部分实现** |
-| Worker + BrowserPool | 预热 Browser / Context、并发消费、崩溃恢复、优雅退出 | 预热、并发、优雅退出已做；真正的多进程 cluster 管理未接入主服务 | **部分实现** |
-| Context 隔离 | 每个任务独占 Context，使用后回收为“干净状态” | 只清了 Cookie，没有清理 LocalStorage / SessionStorage / IndexedDB / Service Worker | **实现不完整** |
-| Redis Session 缓存 | 存 cookies / token / sessionId / loginAt / expiresAt | 只存了 `cookies`、`loginAt`、`expiresAt`，没有 `token` / `sessionId` | **部分实现** |
-| 学校登录实现 | 支持按学校注册扩展 | 注册表机制已做，但当前只有 `0001` 一个学校实现 | **部分实现** |
-| Cluster 模型 | 主进程 fork Worker 并自动拉起 | 仓库里没有 cluster 入口，也没有自动拉起 Worker 的主流程 | **未实现** |
-| 生产配置 | API / Worker / Redis 配置可统一管理 | API 走 Egg 配置，Worker 走环境变量，`config.prod.ts` 还是空的 | **明显欠缺** |
-| 监控告警 | health / queue / worker / redis 维度可观测 | 只有一个非常浅的 `/health`，没有 Redis / Worker / Queue 的真实检查 | **未实现** |
-| 测试保障 | 至少有关键链路测试 | 当前没有登录链路测试 | **未实现** |
+| 模块                 | 文档目标                                                                                | 当前状态                                                                                                             | 结论           |
+| -------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------- |
+| API 接入层           | `POST /session`、`GET /session/:accountId`、`DELETE /session/:accountId`、`GET /health` | `POST /session`、`DELETE`、`GET /health` 已有雏形；`GET /session/:schoolId/:username` 只是提示文案，不会真正读 Redis | **部分实现**   |
+| 异步任务查询         | 调用方轮询结果接口拿到登录结果                                                          | 提供了 `GET /session/job/:jobId`，但只能看到任务状态，不返回 session 数据                                            | **部分实现**   |
+| BullMQ 队列          | 固定 jobId 去重、重试、超时、完成记录保留                                               | 去重 / 重试 / 结果查询已做；任务级 `timeout` 未配置                                                                  | **部分实现**   |
+| Worker + BrowserPool | 预热 Browser / Context、并发消费、崩溃恢复、优雅退出                                    | 预热、并发、优雅退出已做；真正的多进程 cluster 管理未接入主服务                                                      | **部分实现**   |
+| Context 隔离         | 每个任务独占 Context，使用后回收为“干净状态”                                            | 只清了 Cookie，没有清理 LocalStorage / SessionStorage / IndexedDB / Service Worker                                   | **实现不完整** |
+| Redis Session 缓存   | 存 cookies / token / sessionId / loginAt / expiresAt                                    | 只存了 `cookies`、`loginAt`、`expiresAt`，没有 `token` / `sessionId`                                                 | **部分实现**   |
+| 学校登录实现         | 支持按学校注册扩展                                                                      | 注册表机制已做，但当前只有 `0001` 一个学校实现                                                                       | **部分实现**   |
+| Cluster 模型         | 主进程 fork Worker 并自动拉起                                                           | 仓库里没有 cluster 入口，也没有自动拉起 Worker 的主流程                                                              | **未实现**     |
+| 生产配置             | API / Worker / Redis 配置可统一管理                                                     | API 走 Egg 配置，Worker 走环境变量，`config.prod.ts` 还是空的                                                        | **明显欠缺**   |
+| 监控告警             | health / queue / worker / redis 维度可观测                                              | 只有一个非常浅的 `/health`，没有 Redis / Worker / Queue 的真实检查                                                   | **未实现**     |
+| 测试保障             | 至少有关键链路测试                                                                      | 当前没有登录链路测试                                                                                                 | **未实现**     |
 
 ---
 

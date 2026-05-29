@@ -8,16 +8,16 @@
 
 ## 技术栈
 
-| 类别 | 技术 |
-|---|---|
-| 运行时 | Node.js >= 22.18.0 |
-| 框架 | Egg.js (beta / ESM) |
-| 语言 | TypeScript 5 |
-| 自动化浏览器 | Playwright + Chromium |
-| 任务队列 | BullMQ（基于 Redis >= 5.0） |
-| 缓存 | Redis（ioredis 驱动） |
-| Lint | oxlint（Rust 驱动，--type-aware 模式） |
-| 格式化 | Prettier |
+| 类别         | 技术                                   |
+| ------------ | -------------------------------------- |
+| 运行时       | Node.js >= 22.18.0                     |
+| 框架         | Egg.js (beta / ESM)                    |
+| 语言         | TypeScript 5                           |
+| 自动化浏览器 | Playwright + Chromium                  |
+| 任务队列     | BullMQ（基于 Redis >= 5.0）            |
+| 缓存         | Redis（ioredis 驱动）                  |
+| Lint         | oxlint（Rust 驱动，--type-aware 模式） |
+| 格式化       | Prettier                               |
 
 ---
 
@@ -79,16 +79,16 @@ npm run dev:all
 
 ## NPM Scripts
 
-| 命令 | 说明 |
-|---|---|
-| `npm run dev` | 本地开发，API 服务热重载 |
+| 命令                 | 说明                                                 |
+| -------------------- | ---------------------------------------------------- |
+| `npm run dev`        | 本地开发，API 服务热重载                             |
 | `npm run worker:dev` | 本地开发，启动 Playwright Worker 进程（读取 `.env`） |
-| `npm run dev:all` | 同时启动 API 和 Worker（使用 concurrently） |
-| `npm run build` | 编译 TypeScript → JavaScript（生产用） |
-| `npm start` | 以守护进程方式启动生产 API 服务 |
-| `npm stop` | 停止生产守护进程 |
-| `npm run lint` | oxlint 代码检查 |
-| `npm run clean` | 清理 TypeScript 编译产物 |
+| `npm run dev:all`    | 同时启动 API 和 Worker（使用 concurrently）          |
+| `npm run build`      | 编译 TypeScript → JavaScript（生产用）               |
+| `npm start`          | 以守护进程方式启动生产 API 服务                      |
+| `npm stop`           | 停止生产守护进程                                     |
+| `npm run lint`       | oxlint 代码检查                                      |
+| `npm run clean`      | 清理 TypeScript 编译产物                             |
 
 ---
 
@@ -100,11 +100,11 @@ npm run dev:all
 { "code": 0, "message": "ok", "data": { ... } }
 ```
 
-| code | 含义 |
-|------|------|
-| `0`  | 成功 |
-| `1`  | 异步处理中（等待 Worker 执行） |
-| `2`  | 任务失败（登录失败） |
+| code | 含义                             |
+| ---- | -------------------------------- |
+| `0`  | 成功                             |
+| `1`  | 异步处理中（等待 Worker 执行）   |
+| `2`  | 任务失败（登录失败）             |
 | `-1` | 参数错误 / 资源不存在 / 服务异常 |
 
 ---
@@ -127,12 +127,12 @@ npm run dev:all
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `cid` | string | ✅ | 学校 ID（见学校列表） |
-| `sid` | string | ✅ | 学号 |
-| `pwd` | string | ✅ | 密码（明文，传输请走 HTTPS） |
-| `force` | boolean | ❌ | 默认 `false`；为 `true` 时跳过缓存，强制重新登录 |
+| 字段    | 类型    | 必填 | 说明                                             |
+| ------- | ------- | ---- | ------------------------------------------------ |
+| `cid`   | string  | ✅   | 学校 ID（见学校列表）                            |
+| `sid`   | string  | ✅   | 学号                                             |
+| `pwd`   | string  | ✅   | 密码（明文，传输请走 HTTPS）                     |
+| `force` | boolean | ❌   | 默认 `false`；为 `true` 时跳过缓存，强制重新登录 |
 
 **响应示例（缓存命中，直接返回）：**
 
@@ -143,7 +143,7 @@ npm run dev:all
   "data": {
     "schoolId": "0001",
     "username": "8303221115",
-    "cookies": [ { "name": "JSESSIONID", "value": "...", "domain": "..." } ],
+    "cookies": [{ "name": "JSESSIONID", "value": "...", "domain": "..." }],
     "sessionId": "TGT-XXXXX",
     "loginAt": 1713400000000,
     "expiresAt": 1713401800000
@@ -167,12 +167,12 @@ npm run dev:all
 
 轮询 BullMQ 任务状态。**任务完成时直接返回 Session 数据**，无需再调用 query 接口。
 
-| 状态 | code | 说明 |
-|------|------|------|
-| completed | 0 | 登录成功，`data` 为 Session 数据 |
-| waiting / active | 1 | 排队中或执行中 |
-| failed | 2 | 登录失败，`message` 含失败原因 |
-| unknown | -1 | 任务不存在（已过期或 jobId 有误） |
+| 状态             | code | 说明                              |
+| ---------------- | ---- | --------------------------------- |
+| completed        | 0    | 登录成功，`data` 为 Session 数据  |
+| waiting / active | 1    | 排队中或执行中                    |
+| failed           | 2    | 登录失败，`message` 含失败原因    |
+| unknown          | -1   | 任务不存在（已过期或 jobId 有误） |
 
 ```
 GET /session/job/login:0001:8303221115
@@ -289,9 +289,9 @@ edu-sys-auth/
 
 目前已实现 Playwright 自动化登录的学校：
 
-| 学校 ID | 学校名称 | 状态 |
-|---------|---------|------|
-| 0001 | 中南大学 | ✅ 已实现 |
+| 学校 ID | 学校名称 | 状态      |
+| ------- | -------- | --------- |
+| 0001    | 中南大学 | ✅ 已实现 |
 
 其余学校的 `playwright.enabled` 为 `false`，调用时会返回 400 错误提示。
 
@@ -316,7 +316,7 @@ TTL:   默认 1800 秒（30 分钟），各学校可在 schools.ts 单独配置
 {
   "schoolId": "0001",
   "username": "8303221115",
-  "cookies": [ { "name": "JSESSIONID", "value": "...", "domain": "..." } ],
+  "cookies": [{ "name": "JSESSIONID", "value": "...", "domain": "..." }],
   "sessionId": "关键Cookie值（快速取用）",
   "loginAt": 1713400000000,
   "expiresAt": 1713401800000
@@ -329,14 +329,14 @@ TTL:   默认 1800 秒（30 分钟），各学校可在 schools.ts 单独配置
 
 Worker 进程独立于 Egg.js，通过 `node --env-file=.env` 读取配置。**务必与 Egg.js 的 Redis 配置指向同一实例。**
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `REDIS_HOST` | `127.0.0.1` | Redis 地址 |
-| `REDIS_PORT` | `6379` | Redis 端口 |
-| `REDIS_PASSWORD` | `""` | Redis 密码（无则留空） |
-| `REDIS_DB` | `0` | Redis 数据库索引 |
-| `BROWSER_COUNT` | `2` | 每个 Worker 启动的 Browser 进程数 |
-| `CONTEXTS_PER_BROWSER` | `5` | 每个 Browser 的并发 Context 数 |
+| 变量名                 | 默认值      | 说明                              |
+| ---------------------- | ----------- | --------------------------------- |
+| `REDIS_HOST`           | `127.0.0.1` | Redis 地址                        |
+| `REDIS_PORT`           | `6379`      | Redis 端口                        |
+| `REDIS_PASSWORD`       | `""`        | Redis 密码（无则留空）            |
+| `REDIS_DB`             | `0`         | Redis 数据库索引                  |
+| `BROWSER_COUNT`        | `2`         | 每个 Worker 启动的 Browser 进程数 |
+| `CONTEXTS_PER_BROWSER` | `5`         | 每个 Browser 的并发 Context 数    |
 
 **总并发数 = `BROWSER_COUNT × CONTEXTS_PER_BROWSER`**（默认 10）
 
@@ -356,12 +356,12 @@ CONTEXTS_PER_BROWSER=10
 
 为加快 Playwright 登录速度，BrowserPool 默认拦截以下请求：
 
-| 屏蔽类型 | 说明 |
-|---------|------|
-| 字体文件（`.woff .ttf .otf`） | 登录流程不依赖字体 |
-| 媒体文件（`.mp4 .mp3` 等） | 登录页无音视频 |
-| 第三方埋点（Google Analytics、百度统计等） | 不影响登录 |
-| 图片（`.png .jpg .gif` 等） | **默认屏蔽**，有图形验证码的学校设 `blockImages: false` 关闭 |
+| 屏蔽类型                                   | 说明                                                         |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| 字体文件（`.woff .ttf .otf`）              | 登录流程不依赖字体                                           |
+| 媒体文件（`.mp4 .mp3` 等）                 | 登录页无音视频                                               |
+| 第三方埋点（Google Analytics、百度统计等） | 不影响登录                                                   |
+| 图片（`.png .jpg .gif` 等）                | **默认屏蔽**，有图形验证码的学校设 `blockImages: false` 关闭 |
 
 在 `schools.ts` 中控制图片屏蔽行为：
 
