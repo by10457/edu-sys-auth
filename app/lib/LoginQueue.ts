@@ -21,14 +21,18 @@ export interface LoginJobData {
 
 /** BullMQ 队列名称 */
 export const LOGIN_QUEUE_NAME = 'edu-login';
+/** 登录任务失败重试次数 */
+const LOGIN_JOB_ATTEMPTS = Number.parseInt(process.env.LOGIN_JOB_ATTEMPTS ?? '3', 10);
+/** 登录任务指数退避初始延迟 */
+const LOGIN_JOB_BACKOFF_DELAY_MS = Number.parseInt(process.env.LOGIN_JOB_BACKOFF_DELAY_MS ?? '2000', 10);
 
 /** 默认任务配置 */
 const DEFAULT_JOB_OPTIONS: JobsOptions = {
   /** 失败后最多重试 3 次，指数退避 */
-  attempts: 3,
+  attempts: LOGIN_JOB_ATTEMPTS,
   backoff: {
     type: 'exponential',
-    delay: 2000,
+    delay: LOGIN_JOB_BACKOFF_DELAY_MS,
   },
   /**
    * 任务超时控制：在 Worker 侧通过 lockDuration 实现

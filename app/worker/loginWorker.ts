@@ -22,6 +22,11 @@
  *   REDIS_DB              Redis 数据库索引，默认 0
  *   BROWSER_COUNT         Browser 实例数，默认：无头模式 2，有头模式 1
  *   CONTEXTS_PER_BROWSER  每个 Browser 的 Context 数，默认：无头模式 5，有头模式 2
+ *   MAX_PENDING_ACQUIRES  等待 Context 的最大排队数，默认总 Context 数 × 4
+ *   ACQUIRE_TIMEOUT_MS    等待空闲 Context 的超时时间，默认 30000
+ *   RECYCLE_CONTEXT_AFTER_USE 任务结束后是否重建 Context，默认 true
+ *   MAX_CONTEXT_USAGE     关闭 RECYCLE 后单个 Context 最大复用次数，默认 50
+ *   JOB_LOCK_DURATION_MS  BullMQ 任务锁超时时间，默认 75000
  *   HEADLESS              是否无头模式，默认 true；设为 false 开启有头调试
  *                         有头模式下 BROWSER_COUNT 和 CONTEXTS_PER_BROWSER 默认值自动降低
  *
@@ -62,13 +67,26 @@ const HEADLESS = process.env.HEADLESS !== 'false'; // 默认为 true
 const DEFAULT_BROWSER_COUNT = HEADLESS ? 2 : 1;
 const DEFAULT_CONTEXTS_PER_BROWSER = HEADLESS ? 5 : 2;
 
-const BROWSER_COUNT = parseInt(process.env.BROWSER_COUNT ?? String(DEFAULT_BROWSER_COUNT), 10);
-const CONTEXTS_PER_BROWSER = parseInt(
+const BROWSER_COUNT = Number.parseInt(process.env.BROWSER_COUNT ?? String(DEFAULT_BROWSER_COUNT), 10);
+const CONTEXTS_PER_BROWSER = Number.parseInt(
   process.env.CONTEXTS_PER_BROWSER ?? String(DEFAULT_CONTEXTS_PER_BROWSER),
   10,
 );
 /** BullMQ 每个 Worker 并发消费数 = 总 Context 数 */
 const CONCURRENCY = BROWSER_COUNT * CONTEXTS_PER_BROWSER;
+/** 等待 Context 的最大排队数，防止瞬时洪峰无限堆积 Promise */
+const MAX_PENDING_ACQUIRES = Number.parseInt(
+  process.env.MAX_PENDING_ACQUIRES ?? String(CONCURRENCY * 4),
+  10,
+);
+/** 等待空闲 Context 的超时时间 */
+const ACQUIRE_TIMEOUT_MS = Number.parseInt(process.env.ACQUIRE_TIMEOUT_MS ?? '30000', 10);
+/** 默认每个任务结束后重建 Context，隔离优先 */
+const RECYCLE_CONTEXT_AFTER_USE = process.env.RECYCLE_CONTEXT_AFTER_USE !== 'false';
+/** 关闭重建策略后，单个 Context 的最大复用次数 */
+const MAX_CONTEXT_USAGE = Number.parseInt(process.env.MAX_CONTEXT_USAGE ?? '50', 10);
+/** BullMQ 任务锁超时时间 */
+const JOB_LOCK_DURATION_MS = Number.parseInt(process.env.JOB_LOCK_DURATION_MS ?? '75000', 10);
 
 if (!HEADLESS) {
   console.log(
@@ -95,10 +113,17 @@ const redisForSession = new Redis({
   db: REDIS_DB,
   maxRetriesPerRequest: 3,
 });
+redisForSession.on('error', err => {
+  console.error(`[Worker] Session Redis 错误: ${err.message}`);
+});
 
 const pool = new BrowserPool({
   browserCount: BROWSER_COUNT,
   contextsPerBrowser: CONTEXTS_PER_BROWSER,
+  maxContextUsage: MAX_CONTEXT_USAGE,
+  acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
+  maxPendingAcquires: MAX_PENDING_ACQUIRES,
+  recycleContextAfterUse: RECYCLE_CONTEXT_AFTER_USE,
   headless: HEADLESS,
 });
 
@@ -107,7 +132,14 @@ let isShuttingDown = false;
 // ── 初始化 BrowserPool ────────────────────────────────────────────────────────
 
 console.log(`[Worker] 预热浏览器池：${BROWSER_COUNT} Browser × ${CONTEXTS_PER_BROWSER} Context...`);
-await pool.init();
+try {
+  await pool.init();
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[Worker] 浏览器池初始化失败: ${message}`);
+  redisForSession.disconnect();
+  process.exit(1);
+}
 console.log(`[Worker] 浏览器池就绪，并发消费数：${CONCURRENCY}`);
 
 // ── 启动 BullMQ Worker ────────────────────────────────────────────────────────
@@ -181,7 +213,10 @@ const worker = new Worker<LoginJobData>(
       dirty = true;
       throw err;
     } finally {
-      await pool.release(managed, dirty);
+      await pool.release(managed, dirty).catch(err => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[Worker] Context 释放失败 schoolId=${schoolId} username=${username}: ${message}`);
+      });
     }
   },
   {
@@ -193,7 +228,7 @@ const worker = new Worker<LoginJobData>(
      * 设为 75s（略大于 Playwright 单次登录超时 60s + 余量），防止 Playwright 挂死
      * 时任务永久占用并发槽位。
      */
-    lockDuration: 75_000,
+    lockDuration: JOB_LOCK_DURATION_MS,
   },
 );
 
@@ -205,6 +240,10 @@ worker.on('error', err => {
   console.error(`[Worker] Worker 错误: ${err.message}`);
 });
 
+worker.on('stalled', jobId => {
+  console.error(`[Worker] 任务锁续期失败，任务可能会被重新投递 jobId=${jobId}`);
+});
+
 console.log(`[Worker] 已启动，监听队列「${LOGIN_QUEUE_NAME}」`);
 
 // ── 优雅退出 ──────────────────────────────────────────────────────────────────
@@ -214,19 +253,23 @@ async function gracefulShutdown(signal: string) {
   isShuttingDown = true;
   console.log(`[Worker] 收到 ${signal}，开始优雅退出...`);
 
-  // 1. 停止接收新任务，等待当前任务执行完毕
-  await worker.close();
-  console.log('[Worker] BullMQ Worker 已关闭');
+  try {
+    // 1. 停止接收新任务，等待当前任务执行完毕
+    await worker.close();
+    console.log('[Worker] BullMQ Worker 已关闭');
 
-  // 2. 关闭浏览器池
-  await pool.close();
-  console.log('[Worker] BrowserPool 已关闭');
-
-  // 3. 关闭 Redis 连接
-  redisForSession.disconnect();
-  console.log('[Worker] Redis 连接已断开');
-
-  process.exit(0);
+    // 2. 关闭浏览器池
+    await pool.close();
+    console.log('[Worker] BrowserPool 已关闭');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[Worker] 优雅退出过程中出现异常: ${message}`);
+  } finally {
+    // 3. 关闭 Redis 连接
+    redisForSession.disconnect();
+    console.log('[Worker] Redis 连接已断开');
+    process.exit(0);
+  }
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

@@ -129,7 +129,9 @@ export const school0052Login: SchoolLoginService = {
 
       // 截图验证码图片 → OCR → 填写
       const imgBuffer = await captchaImg.screenshot();
-      const captchaText = await recognizeCaptcha(imgBuffer, '10113');
+      const captchaText = await recognizeCaptcha(imgBuffer, {
+        charsetRange: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      });
       console.log(`[0052] OCR 识别结果: ${captchaText}`);
 
       await page.fill(CAPTCHA_INPUT_SELECTOR, captchaText);

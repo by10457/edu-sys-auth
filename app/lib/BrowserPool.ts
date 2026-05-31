@@ -21,6 +21,10 @@ export interface BrowserPoolConfig {
   maxContextUsage?: number;
   /** acquire 等待超时（毫秒），默认 30000 */
   acquireTimeoutMs?: number;
+  /** 等待 Context 的最大排队数，超出后直接失败，避免洪峰拖垮内存 */
+  maxPendingAcquires?: number;
+  /** 每次任务结束后是否重建 Context，默认 true，优先保证账号隔离 */
+  recycleContextAfterUse?: boolean;
   /**
    * 是否以无头模式运行浏览器，默认 true（生产模式）
    * 设为 false 可在开发时看到浏览器可视化自动化过程（注意：有头模式下建议减少并发数）
@@ -39,6 +43,8 @@ export class BrowserPool {
   private readonly contextsPerBrowser: number;
   private readonly maxContextUsage: number;
   private readonly acquireTimeoutMs: number;
+  private readonly maxPendingAcquires: number;
+  private readonly recycleContextAfterUse: boolean;
   private readonly headless: boolean;
 
   /** 空闲 Context 队列 */
@@ -58,6 +64,8 @@ export class BrowserPool {
     this.contextsPerBrowser = config.contextsPerBrowser ?? 5;
     this.maxContextUsage = config.maxContextUsage ?? 50;
     this.acquireTimeoutMs = config.acquireTimeoutMs ?? 30_000;
+    this.maxPendingAcquires = config.maxPendingAcquires ?? this.browserCount * this.contextsPerBrowser * 4;
+    this.recycleContextAfterUse = config.recycleContextAfterUse ?? true;
     this.headless = config.headless ?? true;
   }
 
@@ -80,6 +88,12 @@ export class BrowserPool {
 
     if (this.idlePool.length > 0) {
       return this.idlePool.shift()!;
+    }
+
+    if (this.waitQueue.length >= this.maxPendingAcquires) {
+      throw new Error(
+        `[BrowserPool] 等待队列已满（${this.maxPendingAcquires}），请稍后重试或增加 Worker 容量`,
+      );
     }
 
     // 无空闲 Context，挂起等待
@@ -106,13 +120,13 @@ export class BrowserPool {
    * @param dirty - true 时强制重建 Context 而非归还（登录失败/Context 异常时）
    *
    * 清场策略：
-   * 教务系统部分站点会将 token 写入 localStorage / sessionStorage，
-   * 仅清 Cookie 无法防止账号状态污染下一个任务。
-   * 通过关闭所有 Page（触发浏览器回收页面级存储）并清 Cookie，实现完整隔离。
-   * 性能上优于重建 Context（无需重新注入初始化脚本）。
+   * 教务系统可能把 token 写入 localStorage / sessionStorage / IndexedDB / ServiceWorker。
+   * 只关闭 Page 或清 Cookie 无法可靠清理这些状态，因此默认任务结束即重建 Context。
+   * Browser 进程仍保持池化，避免每次冷启动 Chromium；Context 重建成本远低于 Browser 重启。
    */
   async release(managed: ManagedContext, dirty = false): Promise<void> {
-    if (dirty || managed.usageCount >= this.maxContextUsage) {
+    const nextUsageCount = managed.usageCount + 1;
+    if (dirty || this.recycleContextAfterUse || nextUsageCount >= this.maxContextUsage) {
       // 强制重建
       await this.rebuildContext(managed);
       return;
@@ -130,6 +144,7 @@ export class BrowserPool {
       return;
     }
 
+    managed.usageCount = nextUsageCount;
     this.returnToPool(managed);
   }
 
@@ -185,7 +200,12 @@ export class BrowserPool {
       // 移除当前 Browser 下的所有 Context
       this.idlePool = this.idlePool.filter(m => m.browserId !== id);
       this.browsers.delete(id);
-      setTimeout(() => this.launchBrowser(), 1000);
+      setTimeout(() => {
+        void this.launchBrowser().catch(err => {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[BrowserPool] Browser #${id} 重建失败: ${message}`);
+        });
+      }, 1000);
     });
 
     // 预创建 Context
@@ -256,8 +276,6 @@ export class BrowserPool {
 
   /** 将 ManagedContext 放入空闲队列或唤醒等待者 */
   private returnToPool(managed: ManagedContext): void {
-    managed.usageCount++;
-
     if (this.waitQueue.length > 0) {
       const waiter = this.waitQueue.shift()!;
       waiter.resolve(managed);

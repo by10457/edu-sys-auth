@@ -39,7 +39,9 @@ export const school0008Login: SchoolLoginService = {
 
       const captchaImg = page.locator(CAPTCHA_IMG_SELECTOR);
       await captchaImg.waitFor({ state: 'visible', timeout: 10_000 });
-      const captchaText = await recognizeCaptcha(await captchaImg.screenshot(), '10113');
+      const captchaText = await recognizeCaptcha(await captchaImg.screenshot(), {
+        charsetRange: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      });
       await page.fill(CAPTCHA_INPUT_SELECTOR, captchaText);
 
       const beforeClickUrl = page.url();
