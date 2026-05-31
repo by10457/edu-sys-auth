@@ -68,6 +68,7 @@ export class SessionService {
     schoolId: string,
     username: string,
     password: string,
+    accountType = 0,
     force = false,
   ): Promise<GetSessionResult> {
     const schoolConfig = getSchoolConfig(schoolId);
@@ -80,16 +81,16 @@ export class SessionService {
 
     // force 模式：删除旧缓存，直接入队
     if (force) {
-      await deleteSessionFromRedis(this.redis, schoolId, username);
-      const jobId = await this.loginQueue.enqueue({ schoolId, username, password });
+      await deleteSessionFromRedis(this.redis, schoolId, username, accountType);
+      const jobId = await this.loginQueue.enqueue({ schoolId, username, password, accountType });
       return { hit: false, jobId };
     }
 
     // 1. 查询 Redis 缓存
     if (schoolConfig.cache.enabled) {
-      const data = await readSessionFromRedis(this.redis, schoolId, username);
+      const data = await readSessionFromRedis(this.redis, schoolId, username, accountType);
       if (data) {
-        const ttl = await this.redis.ttl(buildSessionKey(schoolId, username));
+        const ttl = await this.redis.ttl(buildSessionKey(schoolId, username, accountType));
         if (ttl > schoolConfig.cache.minRemain) {
           return { hit: true, data };
         }
@@ -97,15 +98,15 @@ export class SessionService {
     }
 
     // 2. 缓存不存在或即将过期，写入队列
-    const jobId = await this.loginQueue.enqueue({ schoolId, username, password });
+    const jobId = await this.loginQueue.enqueue({ schoolId, username, password, accountType });
     return { hit: false, jobId };
   }
 
   /**
    * 直接从 Redis 读取 Session 数据，不触发登录
    */
-  async readSession(schoolId: string, username: string): Promise<SessionData | null> {
-    return readSessionFromRedis(this.redis, schoolId, username);
+  async readSession(schoolId: string, username: string, accountType = 0): Promise<SessionData | null> {
+    return readSessionFromRedis(this.redis, schoolId, username, accountType);
   }
 
   /**
@@ -115,10 +116,17 @@ export class SessionService {
     const result = await this.loginQueue.getJobResult(jobId);
 
     if (result.status === 'completed') {
-      const rv = result.result as { schoolId?: string; username?: string } | undefined;
+      const rv = result.result as
+        | { schoolId?: string; username?: string; accountType?: number }
+        | undefined;
       let sessionData: SessionData | null = null;
       if (rv?.schoolId && rv?.username) {
-        sessionData = await readSessionFromRedis(this.redis, rv.schoolId, rv.username);
+        sessionData = await readSessionFromRedis(
+          this.redis,
+          rv.schoolId,
+          rv.username,
+          rv.accountType ?? 0,
+        );
       }
       return { status: 'completed', sessionData };
     }
@@ -129,8 +137,8 @@ export class SessionService {
   /**
    * 主动删除 Session 缓存（强制下次重新登录）
    */
-  async deleteSession(schoolId: string, username: string): Promise<void> {
-    return deleteSessionFromRedis(this.redis, schoolId, username);
+  async deleteSession(schoolId: string, username: string, accountType = 0): Promise<void> {
+    return deleteSessionFromRedis(this.redis, schoolId, username, accountType);
   }
 
   /**

@@ -115,7 +115,7 @@ console.log(`[Worker] 浏览器池就绪，并发消费数：${CONCURRENCY}`);
 const worker = new Worker<LoginJobData>(
   LOGIN_QUEUE_NAME,
   async job => {
-    const { schoolId, username, password } = job.data;
+    const { schoolId, username, password, accountType } = job.data;
     const schoolConfig = getSchoolConfig(schoolId);
     if (!schoolConfig) {
       throw new UnrecoverableError(`未知学校 ID：${schoolId}，任务不重试`);
@@ -152,6 +152,7 @@ const worker = new Worker<LoginJobData>(
         redisForSession,
         schoolId,
         username,
+        accountType,
         result.cookies,
         ttl,
         result.sessionId,
@@ -160,7 +161,7 @@ const worker = new Worker<LoginJobData>(
       console.log(`[Worker] 登录成功 schoolId=${schoolId} username=${username} TTL=${ttl}s`);
 
       // returnvalue 中携带 schoolId/username，让 SessionService.getJobResult 能定位 Redis key
-      return { success: true, schoolId, username, loginAt: result.loginAt };
+      return { success: true, schoolId, username, accountType, loginAt: result.loginAt };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[Worker] 登录失败 schoolId=${schoolId} username=${username}: ${message}`);

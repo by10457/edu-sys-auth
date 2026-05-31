@@ -44,6 +44,10 @@ interface SessionRequestBody {
   sid: string;
   /** 密码（明文） */
   pwd: string;
+  /** 账号类型，对齐 edu-sys-spider 的 type/account_type */
+  type?: number | string;
+  /** 账号类型的兼容字段 */
+  account_type?: number | string;
   /**
    * 是否强制重新登录（跳过 Redis 缓存）
    * - 默认 false：缓存命中直返
@@ -66,6 +70,13 @@ export class SessionController {
     return new SessionService(redis, redisConfig);
   }
 
+  /** 解析账号类型，兼容 spider 的 type/account_type 两种入参 */
+  private getAccountType(body: Pick<SessionRequestBody, 'type' | 'account_type'> | null): number {
+    const rawType = body?.type ?? body?.account_type ?? 0;
+    const accountType = Number(rawType);
+    return Number.isFinite(accountType) && accountType >= 0 ? accountType : 0;
+  }
+
   /**
    * POST /session/login
    * 提交自动化登录任务。
@@ -78,6 +89,7 @@ export class SessionController {
   })
   async submitLogin(@HTTPContext() ctx: Context, @HTTPBody() body: SessionRequestBody) {
     const { cid, sid, pwd, force = false } = body ?? {};
+    const accountType = this.getAccountType(body ?? null);
 
     if (!cid || !sid || !pwd) {
       ctx.status = 200;
@@ -91,7 +103,7 @@ export class SessionController {
 
     try {
       const sessionService = this.getSessionService(ctx);
-      const result = await sessionService.getSession(cid, sid, pwd, force);
+      const result = await sessionService.getSession(cid, sid, pwd, accountType, force);
 
       if (result.hit) {
         // 缓存命中，直接返回 Session
@@ -127,9 +139,10 @@ export class SessionController {
   })
   async querySession(
     @HTTPContext() ctx: Context,
-    @HTTPBody() body: Pick<SessionRequestBody, 'cid' | 'sid'>,
+    @HTTPBody() body: Pick<SessionRequestBody, 'cid' | 'sid' | 'type' | 'account_type'>,
   ) {
     const { cid, sid } = body ?? {};
+    const accountType = this.getAccountType(body ?? null);
 
     if (!cid || !sid) {
       ctx.status = 200;
@@ -139,7 +152,7 @@ export class SessionController {
 
     try {
       const sessionService = this.getSessionService(ctx);
-      const data = await sessionService.readSession(cid, sid);
+      const data = await sessionService.readSession(cid, sid, accountType);
       if (!data) {
         ctx.status = 200;
         ctx.body = {
@@ -168,9 +181,10 @@ export class SessionController {
   })
   async deleteSession(
     @HTTPContext() ctx: Context,
-    @HTTPBody() body: Pick<SessionRequestBody, 'cid' | 'sid'>,
+    @HTTPBody() body: Pick<SessionRequestBody, 'cid' | 'sid' | 'type' | 'account_type'>,
   ) {
     const { cid, sid } = body ?? {};
+    const accountType = this.getAccountType(body ?? null);
 
     if (!cid || !sid) {
       ctx.status = 200;
@@ -180,7 +194,7 @@ export class SessionController {
 
     try {
       const sessionService = this.getSessionService(ctx);
-      await sessionService.deleteSession(cid, sid);
+      await sessionService.deleteSession(cid, sid, accountType);
       ctx.status = 200;
       ctx.body = {
         code: 200,

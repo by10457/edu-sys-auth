@@ -97,15 +97,18 @@ npm run dev:all
 所有响应体格式统一：
 
 ```json
-{ "code": 0, "message": "ok", "data": { ... } }
+{ "code": 200, "message": "ok", "data": { ... } }
 ```
 
 | code | 含义                             |
 | ---- | -------------------------------- |
-| `0`  | 成功                             |
-| `1`  | 异步处理中（等待 Worker 执行）   |
-| `2`  | 任务失败（登录失败）             |
-| `-1` | 参数错误 / 资源不存在 / 服务异常 |
+| `200` | 成功                             |
+| `202` | 异步处理中（等待 Worker 执行）   |
+| `400` | 参数错误 / 学校未实现            |
+| `401` | 账号或密码错误                   |
+| `404` | 任务或 Session 不存在            |
+| `410` | 任务完成但 Session 已过期        |
+| `500` | 系统 / 自动化异常                |
 
 ---
 
@@ -113,8 +116,8 @@ npm run dev:all
 
 提交自动化登录任务，支持 `force` 强制刷新。
 
-- 缓存命中且 TTL 充裕 → **同步返回** Session（`code: 0`）
-- 缓存未命中 / `force: true` → 入队，**异步执行**，返回 `jobId`（`code: 1`），调用方轮询结果
+- 缓存命中且 TTL 充裕 → **同步返回** Session（`code: 200`）
+- 缓存未命中 / `force: true` → 入队，**异步执行**，返回 `jobId`（`code: 202`），调用方轮询结果
 
 **请求体：**
 
@@ -123,6 +126,7 @@ npm run dev:all
   "cid": "0001",
   "sid": "8303221115",
   "pwd": "your_password",
+  "type": 0,
   "force": false
 }
 ```
@@ -132,18 +136,21 @@ npm run dev:all
 | `cid`   | string  | ✅   | 学校 ID（见学校列表）                            |
 | `sid`   | string  | ✅   | 学号                                             |
 | `pwd`   | string  | ✅   | 密码（明文，传输请走 HTTPS）                     |
+| `type`  | number  | ❌   | 账号类型，默认 `0`，与 edu-sys-spider 对齐       |
 | `force` | boolean | ❌   | 默认 `false`；为 `true` 时跳过缓存，强制重新登录 |
 
 **响应示例（缓存命中，直接返回）：**
 
 ```json
 {
-  "code": 0,
+  "code": 200,
   "message": "ok",
   "data": {
     "schoolId": "0001",
     "username": "8303221115",
+    "accountType": 0,
     "cookies": [{ "name": "JSESSIONID", "value": "...", "domain": "..." }],
+    "cookieMap": { "JSESSIONID": "..." },
     "sessionId": "TGT-XXXXX",
     "loginAt": 1713400000000,
     "expiresAt": 1713401800000
@@ -155,9 +162,9 @@ npm run dev:all
 
 ```json
 {
-  "code": 1,
+  "code": 202,
   "message": "登录任务已提交，请轮询 GET /session/job/:jobId 获取结果",
-  "data": { "jobId": "login:0001:8303221115" }
+  "data": { "jobId": "login-0001-8303221115-0" }
 }
 ```
 
@@ -169,13 +176,13 @@ npm run dev:all
 
 | 状态             | code | 说明                              |
 | ---------------- | ---- | --------------------------------- |
-| completed        | 0    | 登录成功，`data` 为 Session 数据  |
-| waiting / active | 1    | 排队中或执行中                    |
-| failed           | 2    | 登录失败，`message` 含失败原因    |
-| unknown          | -1   | 任务不存在（已过期或 jobId 有误） |
+| completed        | 200  | 登录成功，`data` 为 Session 数据  |
+| waiting / active | 202  | 排队中或执行中                    |
+| failed           | 401 / 500 | 登录失败，`message` 含失败原因 |
+| unknown          | 404  | 任务不存在（已过期或 jobId 有误） |
 
 ```
-GET /session/job/login:0001:8303221115
+GET /session/job/login-0001-8303221115-0
 ```
 
 > 建议轮询间隔 2 秒，超时时间 60 秒（登录通常在 5~10 秒内完成）。
@@ -208,7 +215,7 @@ GET /session/job/login:0001:8303221115
 
 ```json
 {
-  "code": 0,
+  "code": 200,
   "message": "ok",
   "data": { "redis": true, "timestamp": "2024-04-18T10:00:00.000Z" }
 }
@@ -222,13 +229,13 @@ GET /session/job/login:0001:8303221115
 第一次请求（正常流程）
   │
   ├─ POST /session/login { cid, sid, pwd }
-  │     ↓ code: 0 → 直接使用 data.cookies 发请求
-  │     ↓ code: 1 → 拿到 jobId
+  │     ↓ code: 200 → 直接使用 data.cookieMap / data.cookies 发请求
+  │     ↓ code: 202 → 拿到 jobId
   │           ↓
   │     轮询 GET /session/job/:jobId（间隔 2s）
-  │           ↓ code: 0 → 使用 data.cookies 发请求
-  │           ↓ code: 1 → 继续等待
-  │           ↓ code: 2 → 登录失败，提示用户检查账号密码
+  │           ↓ code: 200 → 使用 data.cookieMap / data.cookies 发请求
+  │           ↓ code: 202 → 继续等待
+  │           ↓ code: 401 → 登录失败，提示用户检查账号密码
 
 发现 Cookie 已失效（目标服务器返回 401/302）
   │
@@ -306,17 +313,20 @@ edu-sys-auth/
 ## Redis Session 数据结构
 
 ```
-Key:   session:{cid}:{sid}
+Key:   session:{cid}:{sid}:{type}
 TTL:   默认 1800 秒（30 分钟），各学校可在 schools.ts 单独配置
 ```
 
 > TTL 策略：保守设置（短于目标学校 Session 实际有效期），配合爬虫项目的"遇 401 主动 force 刷新"机制，保证 Cookie 始终有效。
+> 同时会写入 `spider:login_session:{cid}:{sid}:{type}`，值为 edu-sys-spider 可直接读取的 Cookie 字典。
 
 ```json
 {
   "schoolId": "0001",
   "username": "8303221115",
+  "accountType": 0,
   "cookies": [{ "name": "JSESSIONID", "value": "...", "domain": "..." }],
+  "cookieMap": { "JSESSIONID": "..." },
   "sessionId": "关键Cookie值（快速取用）",
   "loginAt": 1713400000000,
   "expiresAt": 1713401800000

@@ -2,7 +2,7 @@
  * LoginQueue — BullMQ 任务队列封装（生产者端）
  *
  * 负责将登录任务写入队列，供 Worker 进程消费。
- * 使用固定 jobId（login:{schoolId}:{username}）实现相同账号自动去重。
+ * 使用固定 jobId（login-{schoolId}-{username}-{accountType}）实现相同账号自动去重。
  */
 
 import { Queue, type JobsOptions } from 'bullmq';
@@ -16,6 +16,7 @@ export interface LoginJobData {
   schoolId: string;
   username: string;
   password: string;
+  accountType: number;
 }
 
 /** BullMQ 队列名称 */
@@ -68,7 +69,7 @@ export class LoginQueue {
    *   若不先删除，后续调用 queue.add() 会直接返回旧 Job 而不入队。
    */
   async enqueue(data: LoginJobData): Promise<string> {
-    const jobId = `login:${data.schoolId}:${data.username}`;
+    const jobId = `login-${data.schoolId}-${data.username}-${data.accountType}`;
 
     // 检查是否有同 ID 的历史 Job
     const existingJob = await this.queue.getJob(jobId);

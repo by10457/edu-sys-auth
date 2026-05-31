@@ -92,7 +92,7 @@ export const schools: Record<string, SchoolConfig> = {
   },
   '0008': {
     name: '南华大学',
-    playwright: { enabled: false },
+    playwright: { enabled: true, blockImages: false },
     cache: { ...defaultCache },
   },
   '0009': {
