@@ -20,6 +20,13 @@
  *   REDIS_PORT            Redis 端口，默认 6379
  *   REDIS_PASSWORD        Redis 密码，默认空
  *   REDIS_DB              Redis 数据库索引，默认 0
+ *   MYSQL_ENABLED         是否写入 edu_user.spider_login_session，默认 true
+ *   MYSQL_HOST            MySQL 地址，默认 127.0.0.1
+ *   MYSQL_PORT            MySQL 端口，默认 3306
+ *   MYSQL_USER            MySQL 用户，默认 root
+ *   MYSQL_PASSWORD        MySQL 密码，默认空
+ *   MYSQL_DB              MySQL 数据库名，默认 edu_user
+ *   MYSQL_CONNECTION_LIMIT MySQL 会话写入连接池大小，默认 3
  *   BROWSER_COUNT         Browser 实例数，默认：无头模式 2，有头模式 1
  *   CONTEXTS_PER_BROWSER  每个 Browser 的 Context 数，默认：无头模式 5，有头模式 2
  *   MAX_PENDING_ACQUIRES  等待 Context 的最大排队数，默认总 Context 数 × 4
@@ -42,7 +49,14 @@ import { Redis } from 'ioredis';
 import { BrowserPool } from '../lib/BrowserPool.ts';
 import { LOGIN_QUEUE_NAME, type LoginJobData } from '../lib/LoginQueue.ts';
 import { getLoginService } from '../service/login/registry.ts';
-import { writeSessionToRedis } from '../lib/SessionStore.ts';
+import { toSpiderCookieMap, writeSessionToRedis } from '../lib/SessionStore.ts';
+import {
+  closeMySQLSessionPool,
+  createMySQLSessionPool,
+  getMySQLSessionConfigFromEnv,
+  saveSessionToMySQL,
+  SPIDER_LOGIN_SESSION_TABLE,
+} from '../lib/MySQLSessionStore.ts';
 import { getSchoolConfig } from '../config/schools.ts';
 
 // ── 从环境变量读取 Redis 配置 ─────────────────────────────────────────────────
@@ -52,6 +66,8 @@ const REDIS_HOST = process.env.REDIS_HOST ?? '127.0.0.1';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT ?? '6379', 10);
 const REDIS_PASSWORD = process.env.REDIS_PASSWORD ?? '';
 const REDIS_DB = parseInt(process.env.REDIS_DB ?? '0', 10);
+
+const MYSQL_CONFIG = getMySQLSessionConfigFromEnv();
 
 // ── 浏览器池参数 ──────────────────────────────────────────────────────────────
 
@@ -67,7 +83,10 @@ const HEADLESS = process.env.HEADLESS !== 'false'; // 默认为 true
 const DEFAULT_BROWSER_COUNT = HEADLESS ? 2 : 1;
 const DEFAULT_CONTEXTS_PER_BROWSER = HEADLESS ? 5 : 2;
 
-const BROWSER_COUNT = Number.parseInt(process.env.BROWSER_COUNT ?? String(DEFAULT_BROWSER_COUNT), 10);
+const BROWSER_COUNT = Number.parseInt(
+  process.env.BROWSER_COUNT ?? String(DEFAULT_BROWSER_COUNT),
+  10,
+);
 const CONTEXTS_PER_BROWSER = Number.parseInt(
   process.env.CONTEXTS_PER_BROWSER ?? String(DEFAULT_CONTEXTS_PER_BROWSER),
   10,
@@ -116,6 +135,13 @@ const redisForSession = new Redis({
 redisForSession.on('error', err => {
   console.error(`[Worker] Session Redis 错误: ${err.message}`);
 });
+
+const mysqlSessionPool = createMySQLSessionPool(MYSQL_CONFIG);
+if (mysqlSessionPool) {
+  console.log(
+    `[Worker] MySQL 会话持久化已启用：${MYSQL_CONFIG.host}:${MYSQL_CONFIG.port}/${MYSQL_CONFIG.database}.${SPIDER_LOGIN_SESSION_TABLE}`,
+  );
+}
 
 const pool = new BrowserPool({
   browserCount: BROWSER_COUNT,
@@ -189,6 +215,22 @@ const worker = new Worker<LoginJobData>(
         ttl,
         result.sessionId,
       );
+      if (mysqlSessionPool) {
+        try {
+          await saveSessionToMySQL(mysqlSessionPool, {
+            schoolId,
+            username,
+            password,
+            accountType,
+            cookieMap: toSpiderCookieMap(result.cookies),
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[Worker] MySQL 会话持久化失败 schoolId=${schoolId} username=${username}: ${message}`,
+          );
+        }
+      }
 
       console.log(`[Worker] 登录成功 schoolId=${schoolId} username=${username} TTL=${ttl}s`);
 
@@ -215,7 +257,9 @@ const worker = new Worker<LoginJobData>(
     } finally {
       await pool.release(managed, dirty).catch(err => {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[Worker] Context 释放失败 schoolId=${schoolId} username=${username}: ${message}`);
+        console.error(
+          `[Worker] Context 释放失败 schoolId=${schoolId} username=${username}: ${message}`,
+        );
       });
     }
   },
@@ -265,9 +309,13 @@ async function gracefulShutdown(signal: string) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[Worker] 优雅退出过程中出现异常: ${message}`);
   } finally {
-    // 3. 关闭 Redis 连接
+    // 3. 关闭 MySQL 和 Redis 连接
+    await closeMySQLSessionPool(mysqlSessionPool).catch(err => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[Worker] MySQL 连接池关闭失败: ${message}`);
+    });
     redisForSession.disconnect();
-    console.log('[Worker] Redis 连接已断开');
+    console.log('[Worker] MySQL/Redis 连接已断开');
     process.exit(0);
   }
 }

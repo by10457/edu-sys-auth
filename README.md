@@ -262,6 +262,7 @@ edu-sys-auth/
 │   ├── lib/
 │   │   ├── BrowserPool.ts               # Playwright 浏览器进程池（预热/隔离/崩溃重建/资源屏蔽）
 │   │   ├── LoginQueue.ts                # BullMQ 队列封装（生产者，含去重/重试配置）
+│   │   ├── MySQLSessionStore.ts         # spider_login_session MySQL 兼容写入
 │   │   └── SessionStore.ts              # Redis Session 读写工具（纯函数，Worker/API 共用）
 │   │
 │   ├── service/
@@ -281,6 +282,9 @@ edu-sys-auth/
 │   ├── config.default.ts                # 通用配置（Redis 连接、CSRF 白名单、重连策略）
 │   ├── config.local.ts                  # 本地开发配置
 │   └── config.prod.ts                   # 生产配置（环境变量注入）
+│
+├── sql/
+│   └── spider_login_session.sql         # edu_user.spider_login_session 表结构
 │
 ├── .env                                 # Worker 环境变量（不提交 git）
 ├── .env.example                         # 环境变量模板（提交 git）
@@ -323,6 +327,7 @@ TTL:   默认 1800 秒（30 分钟），各学校可在 schools.ts 单独配置
 
 > TTL 策略：保守设置（短于目标学校 Session 实际有效期），配合爬虫项目的"遇 401 主动 force 刷新"机制，保证 Cookie 始终有效。
 > 同时会写入 `spider:login_session:{cid}:{sid}:{type}`，值为 edu-sys-spider 可直接读取的 Cookie 字典。
+> Worker 登录成功后还会 upsert 到 `edu_user.spider_login_session`，用于补齐 edu-sys-spider 的 MySQL fallback；表结构见 `sql/spider_login_session.sql`。MySQL 写入失败只记录 warning，不阻断 Redis 主链路。
 
 ```json
 {
@@ -343,23 +348,30 @@ TTL:   默认 1800 秒（30 分钟），各学校可在 schools.ts 单独配置
 
 Worker 进程独立于 Egg.js，通过 `node --env-file=.env` 读取配置。**务必与 Egg.js 的 Redis 配置指向同一实例。**
 
-| 变量名                 | 默认值      | 说明                              |
-| ---------------------- | ----------- | --------------------------------- |
-| `REDIS_HOST`           | `127.0.0.1` | Redis 地址                        |
-| `REDIS_PORT`           | `6379`      | Redis 端口                        |
-| `REDIS_PASSWORD`       | `""`        | Redis 密码（无则留空）            |
-| `REDIS_DB`             | `0`         | Redis 数据库索引                  |
-| `BROWSER_COUNT`        | `2`         | 每个 Worker 启动的 Browser 进程数 |
-| `CONTEXTS_PER_BROWSER` | `5`         | 每个 Browser 的并发 Context 数    |
-| `RECYCLE_CONTEXT_AFTER_USE` | `true` | 每次任务结束后重建 Context，优先保证账号隔离 |
-| `MAX_CONTEXT_USAGE` | `50` | 关闭重建策略后单个 Context 的最大复用次数 |
-| `ACQUIRE_TIMEOUT_MS` | `30000` | 等待空闲 Context 的超时时间 |
-| `MAX_PENDING_ACQUIRES` | `总 Context 数 × 4` | 等待 Context 的最大排队数，防止洪峰撑爆内存 |
-| `JOB_LOCK_DURATION_MS` | `75000` | BullMQ 任务锁超时时间 |
-| `LOGIN_JOB_ATTEMPTS` | `3` | 自动化异常重试次数，凭据错误不会重试 |
-| `LOGIN_JOB_BACKOFF_DELAY_MS` | `2000` | 登录任务指数退避初始延迟 |
-| `OCR_API_URL` | `http://103.120.88.218:10466/ocr` | ddddocr HTTP 服务地址 |
-| `OCR_TIMEOUT_MS` | `10000` | OCR 请求超时时间 |
+| 变量名                       | 默认值                            | 说明                                         |
+| ---------------------------- | --------------------------------- | -------------------------------------------- |
+| `REDIS_HOST`                 | `127.0.0.1`                       | Redis 地址                                   |
+| `REDIS_PORT`                 | `6379`                            | Redis 端口                                   |
+| `REDIS_PASSWORD`             | `""`                              | Redis 密码（无则留空）                       |
+| `REDIS_DB`                   | `0`                               | Redis 数据库索引                             |
+| `MYSQL_ENABLED`              | `true`                            | 是否写入 MySQL 会话表                        |
+| `MYSQL_HOST`                 | `127.0.0.1`                       | MySQL 地址                                   |
+| `MYSQL_PORT`                 | `3306`                            | MySQL 端口                                   |
+| `MYSQL_USER`                 | `root`                            | MySQL 用户                                   |
+| `MYSQL_PASSWORD`             | `""`                              | MySQL 密码                                   |
+| `MYSQL_DB`                   | `edu_user`                        | MySQL 数据库名                               |
+| `MYSQL_CONNECTION_LIMIT`     | `3`                               | MySQL 会话写入连接池大小                     |
+| `BROWSER_COUNT`              | `2`                               | 每个 Worker 启动的 Browser 进程数            |
+| `CONTEXTS_PER_BROWSER`       | `5`                               | 每个 Browser 的并发 Context 数               |
+| `RECYCLE_CONTEXT_AFTER_USE`  | `true`                            | 每次任务结束后重建 Context，优先保证账号隔离 |
+| `MAX_CONTEXT_USAGE`          | `50`                              | 关闭重建策略后单个 Context 的最大复用次数    |
+| `ACQUIRE_TIMEOUT_MS`         | `30000`                           | 等待空闲 Context 的超时时间                  |
+| `MAX_PENDING_ACQUIRES`       | `总 Context 数 × 4`               | 等待 Context 的最大排队数，防止洪峰撑爆内存  |
+| `JOB_LOCK_DURATION_MS`       | `75000`                           | BullMQ 任务锁超时时间                        |
+| `LOGIN_JOB_ATTEMPTS`         | `3`                               | 自动化异常重试次数，凭据错误不会重试         |
+| `LOGIN_JOB_BACKOFF_DELAY_MS` | `2000`                            | 登录任务指数退避初始延迟                     |
+| `OCR_API_URL`                | `http://103.120.88.218:10466/ocr` | ddddocr HTTP 服务地址                        |
+| `OCR_TIMEOUT_MS`             | `10000`                           | OCR 请求超时时间                             |
 
 **总并发数 = `BROWSER_COUNT × CONTEXTS_PER_BROWSER`**（默认 10）
 
