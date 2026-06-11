@@ -20,12 +20,12 @@
  *   REDIS_PORT            Redis 端口，默认 6379
  *   REDIS_PASSWORD        Redis 密码，默认空
  *   REDIS_DB              Redis 数据库索引，默认 0
- *   MYSQL_ENABLED         是否写入 edu_user.spider_login_session，默认 true
+ *   MYSQL_ENABLED         是否写入 wxy_edu.spider_login_session，默认 true
  *   MYSQL_HOST            MySQL 地址，默认 127.0.0.1
  *   MYSQL_PORT            MySQL 端口，默认 3306
  *   MYSQL_USER            MySQL 用户，默认 root
  *   MYSQL_PASSWORD        MySQL 密码，默认空
- *   MYSQL_DB              MySQL 数据库名，默认 edu_user
+ *   MYSQL_DB              MySQL 数据库名，默认 wxy_edu
  *   MYSQL_CONNECTION_LIMIT MySQL 会话写入连接池大小，默认 3
  *   BROWSER_COUNT         Browser 实例数，默认：无头模式 2，有头模式 1
  *   CONTEXTS_PER_BROWSER  每个 Browser 的 Context 数，默认：无头模式 5，有头模式 2

@@ -36,7 +36,7 @@ export function getMySQLSessionConfigFromEnv(env: EnvLike = process.env): MySQLS
     port: Number.parseInt(env.MYSQL_PORT ?? '3306', 10),
     user: env.MYSQL_USER ?? 'root',
     password: env.MYSQL_PASSWORD ?? '',
-    database: env.MYSQL_DB ?? 'edu_user',
+    database: env.MYSQL_DB ?? 'wxy_edu',
     connectionLimit: Number.parseInt(env.MYSQL_CONNECTION_LIMIT ?? '3', 10),
   };
 }

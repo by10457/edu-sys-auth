@@ -7,11 +7,11 @@ import {
 } from '../app/lib/MySQLSessionStore.ts';
 
 describe('MySQLSessionStore', () => {
-  it('uses edu_user and spider_login_session defaults', () => {
+  it('uses wxy_edu and spider_login_session defaults', () => {
     const config = getMySQLSessionConfigFromEnv({});
 
     expect(config.enabled).toBe(true);
-    expect(config.database).toBe('edu_user');
+    expect(config.database).toBe('wxy_edu');
     expect(SPIDER_LOGIN_SESSION_TABLE).toBe('spider_login_session');
   });
 
